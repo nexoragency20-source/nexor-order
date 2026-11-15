@@ -1,0 +1,698 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  STAFF
+  VIEWER
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  SHIPPED
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  BANK_TRANSFER
+  CASH_ON_DELIVERY
+  OTHER
+}
+
+enum CurrencyCode {
+  USD
+  SYP
+}
+
+enum PurchaseStatus {
+  DRAFT
+  RECEIVED
+  CANCELLED
+}
+
+enum FinanceTransactionType {
+  INCOME
+  EXPENSE
+  DEPOSIT
+  WITHDRAWAL
+  OPENING_BALANCE
+  TRANSFER_IN
+  TRANSFER_OUT
+}
+
+enum SalesReturnStatus {
+  REQUESTED
+  RECEIVED
+  REJECTED
+}
+
+enum SalesReturnSettlementType {
+  CASH
+  CUSTOMER_CREDIT
+}
+
+enum InventoryMovementType {
+  PURCHASE_IN
+  SALE_OUT
+  CUSTOMER_RETURN_IN
+  SUPPLIER_RETURN_OUT
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
+  DAMAGE_OUT
+}
+
+enum SubscriptionPlan {
+  MONTHLY
+  THREE_MONTHS
+  SIX_MONTHS
+  YEARLY
+  CUSTOM
+}
+
+enum SubscriptionStatus {
+  PENDING
+  ACTIVE
+  EXPIRED
+  SUSPENDED
+  CANCELLED
+}
+
+enum ActivationCodeStatus {
+  AVAILABLE
+  USED
+  REVOKED
+  EXPIRED
+}
+
+enum ConversationChannel {
+  INSTAGRAM
+  MESSENGER
+  WEBSITE
+  TELEGRAM
+}
+enum ConversationStatus {
+  OPEN
+  CLOSED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageDeliveryStatus {
+  RECEIVED
+  SENT
+  FAILED
+}
+
+model Organization {
+  id          String       @id @default(uuid()) @db.Uuid
+  name        String
+  slug        String       @unique
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  memberships Membership[]
+  stores      Store[]
+
+  @@index([createdAt])
+}
+
+model User {
+  id           String       @id @default(uuid()) @db.Uuid
+  email        String       @unique
+  fullName     String
+  passwordHash String
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  memberships  Membership[]
+  activationCodesUsed ActivationCode[] @relation("ActivationCodeUsedBy")
+
+  @@index([isActive])
+}
+
+model Membership {
+  organizationId String       @db.Uuid
+  userId         String       @db.Uuid
+  role           MemberRole   @default(STAFF)
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([organizationId, userId])
+  @@index([userId])
+}
+
+model Store {
+  id                    String                @id @default(uuid()) @db.Uuid
+  organizationId        String                @db.Uuid
+  name                  String
+  contactName           String?
+  contactPhone          String?
+  subscriptionRequired  Boolean               @default(false)
+  isSuspended           Boolean               @default(false)
+  ownerActivatedAt      DateTime?
+  defaultCurrency       CurrencyCode          @default(SYP)
+  exchangeRateSypPerUsd Decimal               @default(15000) @db.Decimal(20, 6)
+  notifyNewOrders       Boolean               @default(true)
+  notifyLowStock        Boolean               @default(true)
+  notifyReturns         Boolean               @default(true)
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  organization          Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  categories            Category[]
+  products              Product[]
+  customers             Customer[]
+  suppliers             Supplier[]
+  orders                Order[]
+  purchaseInvoices      PurchaseInvoice[]
+  supplierPayments      SupplierPayment[]
+  customerPayments      CustomerPayment[]
+  financeTransactions   FinanceTransaction[]
+  salesReturns          SalesReturn[]
+  inventoryMovements    InventoryMovement[]
+  exchangeRateHistory   ExchangeRateHistory[]
+  channelConnections    ChannelConnection[]
+  conversations         Conversation[]
+  metaOAuthStates       MetaOAuthState[]
+  subscriptions         StoreSubscription[]
+  activationCodes       ActivationCode[]
+  platformAuditLogs     PlatformAuditLog[]
+
+  @@index([organizationId])
+}
+
+model ExchangeRateHistory {
+  id                    String   @id @default(uuid()) @db.Uuid
+  storeId               String   @db.Uuid
+  oldRateSypPerUsd      Decimal  @db.Decimal(20, 6)
+  newRateSypPerUsd      Decimal  @db.Decimal(20, 6)
+  note                  String?
+  changedAt             DateTime @default(now())
+  changedByUserId       String?  @db.Uuid
+  store                 Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, changedAt])
+}
+
+model Category {
+  id        String    @id @default(uuid()) @db.Uuid
+  storeId   String    @db.Uuid
+  name      String
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  store     Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  products  Product[]
+
+  @@unique([storeId, name])
+  @@index([storeId, isActive])
+}
+
+model Product {
+  id                String             @id @default(uuid()) @db.Uuid
+  storeId           String             @db.Uuid
+  categoryId        String?            @db.Uuid
+  name              String
+  sku               String?
+  barcode           String?
+  purchasePriceUsd  Decimal            @default(0) @db.Decimal(20, 6)
+  sellingPriceUsd   Decimal            @default(0) @db.Decimal(20, 6)
+  stockQuantity     Decimal            @default(0) @db.Decimal(20, 3)
+  minimumStock      Decimal            @default(0) @db.Decimal(20, 3)
+  description       String?            @db.Text
+  isActive          Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  store             Store              @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  category          Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  purchaseItems     PurchaseItem[]
+  orderItems        OrderItem[]
+  inventoryMovements InventoryMovement[]
+  salesReturnItems   SalesReturnItem[]
+
+  @@unique([storeId, sku])
+  @@unique([storeId, barcode])
+  @@index([storeId, name])
+  @@index([storeId, isActive])
+}
+
+model Supplier {
+  id               String            @id @default(uuid()) @db.Uuid
+  storeId          String            @db.Uuid
+  name             String
+  phone            String?
+  email            String?
+  address          String?
+  notes            String?
+  isActive         Boolean           @default(true)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  store            Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  purchaseInvoices PurchaseInvoice[]
+  payments         SupplierPayment[]
+
+  @@index([storeId, name])
+}
+
+model Customer {
+  id        String            @id @default(uuid()) @db.Uuid
+  storeId   String            @db.Uuid
+  name      String
+  phone     String?
+  email     String?
+  address   String?
+  notes     String?
+  isActive  Boolean           @default(true)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  store     Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  orders    Order[]
+  payments  CustomerPayment[]
+  salesReturns SalesReturn[]
+
+  @@index([storeId, name])
+  @@index([storeId, phone])
+  @@index([storeId, isActive])
+}
+
+model PurchaseInvoice {
+  id                    String            @id @default(uuid()) @db.Uuid
+  storeId               String            @db.Uuid
+  supplierId            String            @db.Uuid
+  invoiceNumber         String?
+  status                PurchaseStatus    @default(DRAFT)
+  exchangeRateSypPerUsd Decimal           @db.Decimal(20, 6)
+  subtotalUsd           Decimal           @default(0) @db.Decimal(20, 6)
+  totalUsd              Decimal           @default(0) @db.Decimal(20, 6)
+  totalSyp              Decimal           @default(0) @db.Decimal(20, 2)
+  notes                 String?
+  purchasedAt           DateTime          @default(now())
+  receivedAt            DateTime?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  store                 Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  supplier              Supplier          @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  items                 PurchaseItem[]
+  payments              SupplierPayment[]
+
+  @@unique([storeId, invoiceNumber])
+  @@index([storeId, supplierId, purchasedAt])
+  @@index([storeId, status])
+}
+
+model PurchaseItem {
+  id             String         @id @default(uuid()) @db.Uuid
+  purchaseId     String         @db.Uuid
+  productId      String?        @db.Uuid
+  productName    String
+  barcode        String?
+  quantity       Decimal        @db.Decimal(20, 3)
+  unitCostUsd    Decimal        @db.Decimal(20, 6)
+  unitCostSyp    Decimal        @db.Decimal(20, 2)
+  lineTotalUsd   Decimal        @db.Decimal(20, 6)
+  lineTotalSyp   Decimal        @db.Decimal(20, 2)
+  purchase       PurchaseInvoice @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product        Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([purchaseId])
+  @@index([productId])
+}
+
+model SupplierPayment {
+  id                    String         @id @default(uuid()) @db.Uuid
+  storeId               String         @db.Uuid
+  supplierId            String         @db.Uuid
+  purchaseInvoiceId     String?        @db.Uuid
+  amount                Decimal        @db.Decimal(20, 6)
+  currency              CurrencyCode
+  exchangeRateSypPerUsd Decimal        @db.Decimal(20, 6)
+  amountUsdEquivalent   Decimal        @db.Decimal(20, 6)
+  amountSypEquivalent   Decimal        @db.Decimal(20, 2)
+  method                PaymentMethod  @default(CASH)
+  note                  String?
+  paidAt                DateTime       @default(now())
+  store                 Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  supplier              Supplier       @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  purchaseInvoice       PurchaseInvoice? @relation(fields: [purchaseInvoiceId], references: [id], onDelete: SetNull)
+
+  @@index([storeId, supplierId, paidAt])
+  @@index([purchaseInvoiceId])
+}
+
+model Order {
+  id                    String            @id @default(uuid()) @db.Uuid
+  storeId               String            @db.Uuid
+  customerId            String?           @db.Uuid
+  customerNameSnapshot  String?
+  customerPhoneSnapshot String?
+  shippingAddressSnapshot String?
+  orderNumber           String
+  status                OrderStatus       @default(PENDING)
+  paymentStatus         PaymentStatus     @default(UNPAID)
+  paymentMethod         PaymentMethod?
+  exchangeRateSypPerUsd Decimal           @db.Decimal(20, 6)
+  subtotalUsd           Decimal           @default(0) @db.Decimal(20, 6)
+  discountUsd           Decimal           @default(0) @db.Decimal(20, 6)
+  shippingUsd           Decimal           @default(0) @db.Decimal(20, 6)
+  totalUsd              Decimal           @default(0) @db.Decimal(20, 6)
+  totalSyp              Decimal           @default(0) @db.Decimal(20, 2)
+  notes                 String?
+  sourceConversationId  String?           @db.Uuid
+  sourceConfirmationMessageId String?     @unique
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  store                 Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  customer              Customer?         @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  sourceConversation    Conversation?     @relation(fields: [sourceConversationId], references: [id], onDelete: SetNull)
+  items                 OrderItem[]
+  payments              CustomerPayment[]
+  returns               SalesReturn[]
+
+  @@unique([storeId, orderNumber])
+  @@index([storeId, createdAt])
+  @@index([storeId, status])
+  @@index([storeId, paymentStatus])
+  @@index([sourceConversationId, createdAt])
+}
+
+model OrderItem {
+  id                 String   @id @default(uuid()) @db.Uuid
+  orderId            String   @db.Uuid
+  productId          String?  @db.Uuid
+  productName        String
+  barcode            String?
+  quantity           Decimal  @db.Decimal(20, 3)
+  unitPriceUsd       Decimal  @db.Decimal(20, 6)
+  unitPriceSyp       Decimal  @db.Decimal(20, 2)
+  unitCostUsd        Decimal  @default(0) @db.Decimal(20, 6)
+  lineTotalUsd       Decimal  @db.Decimal(20, 6)
+  lineTotalSyp       Decimal  @db.Decimal(20, 2)
+  order              Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  returns            SalesReturnItem[]
+  product            Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+model CustomerPayment {
+  id                    String         @id @default(uuid()) @db.Uuid
+  storeId               String         @db.Uuid
+  customerId            String         @db.Uuid
+  orderId               String?        @db.Uuid
+  amount                Decimal        @db.Decimal(20, 6)
+  currency              CurrencyCode
+  exchangeRateSypPerUsd Decimal        @db.Decimal(20, 6)
+  amountUsdEquivalent   Decimal        @db.Decimal(20, 6)
+  amountSypEquivalent   Decimal        @db.Decimal(20, 2)
+  method                PaymentMethod  @default(CASH)
+  note                  String?
+  paidAt                DateTime       @default(now())
+  store                 Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  customer              Customer       @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  order                 Order?         @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([storeId, customerId, paidAt])
+  @@index([orderId])
+}
+
+model FinanceTransaction {
+  id                    String                 @id @default(uuid()) @db.Uuid
+  storeId               String                 @db.Uuid
+  type                  FinanceTransactionType
+  currency              CurrencyCode
+  amount                Decimal                @db.Decimal(20, 6)
+  exchangeRateSypPerUsd Decimal                @db.Decimal(20, 6)
+  amountUsdEquivalent   Decimal                @db.Decimal(20, 6)
+  amountSypEquivalent   Decimal                @db.Decimal(20, 2)
+  category              String
+  description           String
+  note                  String?
+  referenceType         String?
+  referenceId           String?                @db.Uuid
+  transferGroupId       String?                @db.Uuid
+  occurredAt            DateTime               @default(now())
+  createdAt             DateTime               @default(now())
+  store                 Store                  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, referenceType, referenceId])
+  @@index([storeId, occurredAt])
+  @@index([storeId, currency, occurredAt])
+  @@index([transferGroupId])
+}
+
+
+model SalesReturn {
+  id                    String                    @id @default(uuid()) @db.Uuid
+  storeId               String                    @db.Uuid
+  orderId               String                    @db.Uuid
+  customerId            String?                   @db.Uuid
+  returnNumber          String
+  status                SalesReturnStatus         @default(REQUESTED)
+  settlementType        SalesReturnSettlementType
+  currency              CurrencyCode
+  amount                Decimal                   @db.Decimal(20, 6)
+  exchangeRateSypPerUsd Decimal                   @db.Decimal(20, 6)
+  amountUsdEquivalent   Decimal                   @db.Decimal(20, 6)
+  amountSypEquivalent   Decimal                   @db.Decimal(20, 2)
+  reason                String?
+  notes                 String?
+  requestedAt           DateTime                  @default(now())
+  receivedAt            DateTime?
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+  store                 Store                     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  order                 Order                     @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  customer              Customer?                 @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  items                 SalesReturnItem[]
+
+  @@unique([storeId, returnNumber])
+  @@index([storeId, createdAt])
+  @@index([storeId, status])
+  @@index([orderId, status])
+  @@index([customerId, createdAt])
+}
+
+model SalesReturnItem {
+  id             String      @id @default(uuid()) @db.Uuid
+  salesReturnId  String      @db.Uuid
+  orderItemId    String      @db.Uuid
+  productId      String?     @db.Uuid
+  productName    String
+  barcode        String?
+  quantity       Decimal     @db.Decimal(20, 3)
+  unitPriceUsd   Decimal     @db.Decimal(20, 6)
+  unitPriceSyp   Decimal     @db.Decimal(20, 2)
+  unitCostUsd    Decimal     @default(0) @db.Decimal(20, 6)
+  lineTotalUsd   Decimal     @db.Decimal(20, 6)
+  lineTotalSyp   Decimal     @db.Decimal(20, 2)
+  salesReturn    SalesReturn @relation(fields: [salesReturnId], references: [id], onDelete: Cascade)
+  orderItem      OrderItem   @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  product        Product?    @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@unique([salesReturnId, orderItemId])
+  @@index([orderItemId])
+  @@index([productId])
+}
+
+model InventoryMovement {
+  id              String                @id @default(uuid()) @db.Uuid
+  storeId         String                @db.Uuid
+  productId       String                @db.Uuid
+  type            InventoryMovementType
+  quantity        Decimal               @db.Decimal(20, 3)
+  unitCostUsd     Decimal?              @db.Decimal(20, 6)
+  unitCostSyp     Decimal?              @db.Decimal(20, 2)
+  referenceType   String?
+  referenceId     String?               @db.Uuid
+  note            String?
+  createdAt       DateTime              @default(now())
+  store           Store                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product         Product               @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([storeId, createdAt])
+  @@index([productId, createdAt])
+  @@index([referenceType, referenceId])
+}
+
+model ChannelConnection {
+  id                    String              @id @default(uuid()) @db.Uuid
+  storeId               String              @db.Uuid
+  channel               ConversationChannel
+  externalAccountId     String
+  pageId                String?
+  accountName           String
+  accessTokenEncrypted  String?             @db.Text
+  allowedOrigins        String[]            @default([])
+  tokenExpiresAt        DateTime?
+  isActive              Boolean             @default(true)
+  aiAutoReplyEnabled    Boolean             @default(false)
+  connectedAt           DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  store                 Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  conversations         Conversation[]
+
+  // A Meta asset can belong to one NEXOR store only, preventing cross-tenant webhook leakage.
+  @@unique([channel, externalAccountId])
+  @@index([storeId, channel, isActive])
+  @@index([pageId])
+}
+
+model Conversation {
+  id                    String              @id @default(uuid()) @db.Uuid
+  storeId               String              @db.Uuid
+  channelConnectionId   String              @db.Uuid
+  externalConversationId String
+  externalCustomerId    String
+  customerName          String?
+  customerUsername      String?
+  customerProfileImage  String?
+  lastMessageText       String?             @db.Text
+  lastMessageAt         DateTime?
+  lastInboundAt         DateTime?
+  unreadCount           Int                 @default(0)
+  aiPaused              Boolean             @default(false)
+  aiOrderDraft          Json?
+  publicSessionTokenHash String?             @unique
+  status                ConversationStatus  @default(OPEN)
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  store                 Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  channelConnection     ChannelConnection   @relation(fields: [channelConnectionId], references: [id], onDelete: Cascade)
+  messages              ConversationMessage[]
+  orders                Order[]
+
+  @@unique([channelConnectionId, externalConversationId])
+  @@index([storeId, status, lastMessageAt])
+  @@index([channelConnectionId, lastMessageAt])
+}
+
+model ConversationMessage {
+  id                    String                  @id @default(uuid()) @db.Uuid
+  conversationId        String                  @db.Uuid
+  externalMessageId     String?
+  direction             MessageDirection
+  body                  String?                 @db.Text
+  attachmentUrl         String?                 @db.Text
+  attachmentType        String?
+  status                MessageDeliveryStatus   @default(RECEIVED)
+  rawPayload            Json?
+  createdAt             DateTime                @default(now())
+  conversation          Conversation            @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, externalMessageId])
+  @@index([conversationId, createdAt])
+}
+
+model MetaOAuthState {
+  id             String              @id @default(uuid()) @db.Uuid
+  storeId        String              @db.Uuid
+  state          String              @unique
+  channel        ConversationChannel
+  expiresAt      DateTime
+  createdAt      DateTime            @default(now())
+  store          Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, expiresAt])
+  @@index([expiresAt])
+}
+
+
+
+model PlatformAdmin {
+  id                     String             @id @default(uuid()) @db.Uuid
+  email                  String             @unique
+  fullName               String
+  passwordHash           String
+  isActive               Boolean            @default(true)
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  createdSubscriptions   StoreSubscription[] @relation("SubscriptionCreatedBy")
+  issuedActivationCodes  ActivationCode[]  @relation("ActivationCodeIssuedBy")
+  auditLogs              PlatformAuditLog[]
+
+  @@index([isActive])
+}
+
+model StoreSubscription {
+  id                String             @id @default(uuid()) @db.Uuid
+  storeId           String             @db.Uuid
+  plan              SubscriptionPlan
+  planName          String
+  durationMonths    Int                @default(0)
+  durationDays      Int                @default(0)
+  status            SubscriptionStatus @default(PENDING)
+  startsAt          DateTime?
+  endsAt            DateTime?
+  amount            Decimal            @default(0) @db.Decimal(20, 2)
+  paidAmount        Decimal            @default(0) @db.Decimal(20, 2)
+  currency          CurrencyCode       @default(SYP)
+  notes             String?
+  activatedAt       DateTime?
+  createdByAdminId  String?            @db.Uuid
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  store             Store              @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  createdBy         PlatformAdmin?     @relation("SubscriptionCreatedBy", fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  activationCodes   ActivationCode[]
+
+  @@index([storeId, status, startsAt, endsAt])
+  @@index([createdAt])
+}
+
+model ActivationCode {
+  id                String               @id @default(uuid()) @db.Uuid
+  storeId           String               @db.Uuid
+  subscriptionId    String               @db.Uuid
+  codeHash          String               @unique
+  codeHint          String
+  status            ActivationCodeStatus @default(AVAILABLE)
+  expiresAt         DateTime?
+  usedAt            DateTime?
+  usedByUserId      String?              @db.Uuid
+  createdByAdminId  String               @db.Uuid
+  createdAt         DateTime             @default(now())
+  store             Store                @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  subscription      StoreSubscription    @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  createdBy         PlatformAdmin        @relation("ActivationCodeIssuedBy", fields: [createdByAdminId], references: [id], onDelete: Restrict)
+  usedBy            User?                @relation("ActivationCodeUsedBy", fields: [usedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([storeId, status])
+  @@index([subscriptionId])
+}
+
+model PlatformAuditLog {
+  id         String         @id @default(uuid()) @db.Uuid
+  adminId    String?        @db.Uuid
+  storeId    String?        @db.Uuid
+  actorType  String
+  actorId    String?
+  action     String
+  details    Json?
+  createdAt  DateTime       @default(now())
+  admin      PlatformAdmin? @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  store      Store?         @relation(fields: [storeId], references: [id], onDelete: SetNull)
+
+  @@index([adminId, createdAt])
+  @@index([storeId, createdAt])
+}

@@ -1,0 +1,4 @@
+ALTER TABLE "Store"
+  ADD COLUMN "notifyNewOrders" BOOLEAN NOT NULL DEFAULT true,
+  ADD COLUMN "notifyLowStock" BOOLEAN NOT NULL DEFAULT true,
+  ADD COLUMN "notifyReturns" BOOLEAN NOT NULL DEFAULT true;

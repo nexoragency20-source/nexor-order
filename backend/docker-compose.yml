@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: nexor-orders-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nexor
+      POSTGRES_PASSWORD: nexor_local_dev_change_me
+      POSTGRES_DB: nexor_orders
+    ports:
+      - "5432:5432"
+    volumes:
+      - nexor_orders_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexor -d nexor_orders"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  nexor_orders_pgdata:
